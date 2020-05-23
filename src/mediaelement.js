@@ -88,12 +88,14 @@ export default class MediaElement extends WebAudio {
      * @param {string} preload HTML 5 preload attribute value
      */
     load(url, container, peaks, preload) {
+        console.log('create media');
         const media = document.createElement(this.mediaType);
         media.controls = this.params.mediaControls;
         media.autoplay = this.params.autoplay || false;
         media.preload = preload == null ? 'auto' : preload;
         media.src = url;
         media.style.width = '100%';
+        media.crossOrigin = 'anonymous';
 
         const prevMedia = container.querySelector(this.mediaType);
         if (prevMedia) {
@@ -132,11 +134,19 @@ export default class MediaElement extends WebAudio {
             // Resets the media element and restarts the media resource. Any
             // pending events are discarded. How much media data is fetched is
             // still affected by the preload attribute.
-            media.load();
+            // media.load();
         }
 
         media.addEventListener('error', () => {
             this.fireEvent('error', 'Error loading media element');
+        });
+
+        media.addEventListener('loadstart', () => {
+            console.log('loadstart');
+        });
+
+        media.addEventListener('loadeddata', () => {
+            console.log('loadeddata');
         });
 
         media.addEventListener('canplay', () => {
@@ -390,5 +400,20 @@ export default class MediaElement extends WebAudio {
         }
 
         this.media = null;
+    }
+
+    realtimeRender(ws) {
+        this.createAnalyserNode();
+        let { ac, analyser } = this;
+
+        analyser.fftSize = 2048;
+        let bufferLength = analyser.fftSize;
+        let dataArray = new Uint8Array(bufferLength);
+
+        console.log('realtime rendering');
+        ac.addEventListener('audioprocess', () => {
+            this.analyser.getByteTimeDomainData(dataArray);
+            ws.drawer.drawPeaks(dataArray);
+        });
     }
 }

@@ -3,6 +3,7 @@ import MultiCanvas from './drawer.multicanvas';
 import WebAudio from './webaudio';
 import MediaElement from './mediaelement';
 import PeakCache from './peakcache';
+import RealtimeDrawer from './drawer.realtime';
 
 /*
  * This work is licensed under a BSD-3-Clause License.
@@ -204,6 +205,7 @@ class PluginClass {
 export default class WaveSurfer extends util.Observer {
     /** @private */
     defaultParams = {
+        realtime: false,
         audioContext: null,
         audioScriptProcessor: null,
         audioRate: 1,
@@ -391,6 +393,11 @@ export default class WaveSurfer extends util.Observer {
         if (typeof this.params.renderer !== 'function') {
             throw new Error('Renderer parameter is invalid');
         }
+
+        if (this.params.realtime) {
+            this.params.renderer = RealtimeDrawer;
+        }
+
         /**
          * @private The uninitialised Drawer class
          */
@@ -409,6 +416,12 @@ export default class WaveSurfer extends util.Observer {
         ) {
             this.params.backend = 'MediaElement';
         }
+
+        if (this.params.realtime) {
+            this.params.backend = 'MediaElement';
+        }
+
+        console.log(this.params.backend);
         this.Backend = this.backends[this.params.backend];
 
         /**
@@ -631,18 +644,20 @@ export default class WaveSurfer extends util.Observer {
             this.drawer.progress(this.backend.getPlayedPercents());
         });
 
-        // Click-to-seek
-        this.drawer.on('click', (e, progress) => {
-            setTimeout(() => this.seekTo(progress), 0);
-        });
+        if (!this.params.realtime) {
+            // Click-to-seek
+            this.drawer.on('click', (e, progress) => {
+                setTimeout(() => this.seekTo(progress), 0);
+            });
 
-        // Relay the scroll event from the drawer
-        this.drawer.on('scroll', e => {
-            if (this.params.partialRender) {
-                this.drawBuffer();
-            }
-            this.fireEvent('scroll', e);
-        });
+            // Relay the scroll event from the drawer
+            this.drawer.on('scroll', e => {
+                if (this.params.partialRender) {
+                    this.drawBuffer();
+                }
+                this.fireEvent('scroll', e);
+            });
+        }
     }
 
     /**
@@ -1237,10 +1252,16 @@ export default class WaveSurfer extends util.Observer {
      * @emits WaveSurfer#ready
      */
     loadDecodedBuffer(buffer) {
-        this.backend.load(buffer);
-        this.drawBuffer();
-        this.isReady = true;
-        this.fireEvent('ready');
+        if (this.params.backend === 'WebAudio') {
+            this.backend.load(buffer);
+            this.drawBuffer();
+            this.isReady = true;
+            this.fireEvent('ready');
+        } else {
+            throw new Error(
+                'loadDecodedBuffer can be called when using WebAudio as backend!'
+            );
+        }
     }
 
     /**
@@ -1375,6 +1396,36 @@ export default class WaveSurfer extends util.Observer {
             // If peaks are not provided,
             // url = element.src so we can get peaks with web audio
             url = elt.src;
+        }
+
+        if (this.params.realtime) {
+            this.tmpEvents.push(
+                this.backend.once('canplay', () => {
+                    let ac = this.backend.ac;
+                    let source = ac.createMediaElementSource(
+                        this.backend.media
+                    );
+                    let analyser = (this.backend.analyser = ac.createAnalyser());
+                    analyser.fftSize = 2048;
+                    source.connect(analyser);
+                    analyser.connect(ac.destination);
+                    this.backend.peaks = new Uint8Array(
+                        analyser.frequencyBinCount
+                    );
+                })
+            );
+
+            this.backend.on('audioprocess', () => {
+                if (this.backend.ac.state === 'suspended') {
+                    // console.log('resume context');
+                    this.backend.ac.resume();
+                }
+                let analyser = this.backend.analyser;
+                let peaks = this.backend.peaks;
+                analyser.getByteTimeDomainData(peaks);
+                this.drawer.drawPeaks(peaks);
+            });
+            return;
         }
 
         this.tmpEvents.push(

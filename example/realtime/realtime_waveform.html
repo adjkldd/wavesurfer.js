@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>realtime readering</title>
+</head>
+
+<body>
+
+    <div class="waveform"></div>
+
+    <button class="play">play</button>
+    <button class="pause">pause</button>
+
+    <script src="../../dist/wavesurfer.js"></script>
+    <script>
+        var main = function () {
+            var ws = WaveSurfer.create({
+                container: '.waveform',
+                waveColor: '#409eff',
+                realtime: true
+            })
+            var playBtn = document.querySelector('.play');
+            var pauseBtn = document.querySelector('.pause');
+
+            ws.load('http://localhost:9090/');
+
+            playBtn.addEventListener('click', function () {
+                ws.play();
+            })
+
+            pauseBtn.addEventListener('click', function () {
+                ws.pause();
+            })
+
+            ws.on('ready', () => {
+                console.log('ready')
+            })
+        }
+
+        window.addEventListener('DOMContentLoaded', main);
+    </script>
+</body>
+
+</html>
