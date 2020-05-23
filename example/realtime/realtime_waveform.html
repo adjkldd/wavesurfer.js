@@ -13,6 +13,8 @@
 
     <button class="play">play</button>
     <button class="pause">pause</button>
+    <span id="currentTime"></span>
+    <span id="duration"></span>
 
     <script src="../../dist/wavesurfer.js"></script>
     <script>
@@ -24,6 +26,8 @@
             })
             var playBtn = document.querySelector('.play');
             var pauseBtn = document.querySelector('.pause');
+            var currentTimeEl = document.querySelector('#currentTime');
+            var durationEl = document.querySelector('#duration');
 
             ws.load('http://localhost:9090/');
 
@@ -37,6 +41,11 @@
 
             ws.on('ready', () => {
                 console.log('ready')
+            })
+
+            ws.on('audioprocess', () => {
+                currentTimeEl.innerText = ws.getCurrentTime();
+                durationEl.innerText = ws.getDuration();
             })
         }
 

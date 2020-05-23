@@ -421,7 +421,6 @@ export default class WaveSurfer extends util.Observer {
             this.params.backend = 'MediaElement';
         }
 
-        console.log(this.params.backend);
         this.Backend = this.backends[this.params.backend];
 
         /**
@@ -474,6 +473,9 @@ export default class WaveSurfer extends util.Observer {
         this.createDrawer();
         this.createBackend();
         this.createPeakCache();
+        if (this.params.realtime) {
+            this.drawer.unAll();
+        }
         return this;
     }
 
@@ -644,20 +646,18 @@ export default class WaveSurfer extends util.Observer {
             this.drawer.progress(this.backend.getPlayedPercents());
         });
 
-        if (!this.params.realtime) {
-            // Click-to-seek
-            this.drawer.on('click', (e, progress) => {
-                setTimeout(() => this.seekTo(progress), 0);
-            });
+        // Click-to-seek
+        this.drawer.on('click', (e, progress) => {
+            setTimeout(() => this.seekTo(progress), 0);
+        });
 
-            // Relay the scroll event from the drawer
-            this.drawer.on('scroll', e => {
-                if (this.params.partialRender) {
-                    this.drawBuffer();
-                }
-                this.fireEvent('scroll', e);
-            });
-        }
+        // Relay the scroll event from the drawer
+        this.drawer.on('scroll', e => {
+            if (this.params.partialRender) {
+                this.drawBuffer();
+            }
+            this.fireEvent('scroll', e);
+        });
     }
 
     /**

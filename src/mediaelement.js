@@ -88,7 +88,6 @@ export default class MediaElement extends WebAudio {
      * @param {string} preload HTML 5 preload attribute value
      */
     load(url, container, peaks, preload) {
-        console.log('create media');
         const media = document.createElement(this.mediaType);
         media.controls = this.params.mediaControls;
         media.autoplay = this.params.autoplay || false;
@@ -142,11 +141,11 @@ export default class MediaElement extends WebAudio {
         });
 
         media.addEventListener('loadstart', () => {
-            console.log('loadstart');
+            this.fireEvent('loadstart');
         });
 
         media.addEventListener('loadeddata', () => {
-            console.log('loadeddata');
+            this.fireEvent('loadeddata');
         });
 
         media.addEventListener('canplay', () => {
@@ -410,7 +409,6 @@ export default class MediaElement extends WebAudio {
         let bufferLength = analyser.fftSize;
         let dataArray = new Uint8Array(bufferLength);
 
-        console.log('realtime rendering');
         ac.addEventListener('audioprocess', () => {
             this.analyser.getByteTimeDomainData(dataArray);
             ws.drawer.drawPeaks(dataArray);
