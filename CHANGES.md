@@ -1,6 +1,102 @@
 wavesurfer.js changelog
 =======================
 
+4.0.0 (unreleased)
+------------------
+
+- Fixed the `destroy` method of the `MediaElementWebAudio` backend. Instead of
+  destroying only the media element, the audio nodes are disconnected and the
+  audio context is closed. This was done by splitting the `destroy` method of the
+  `WebAudio` backend, so it calls the new `destroyWebAudio` method to cancel
+  everything related to WebAudio (#1927)
+- Removed private methods of plugins and generalized plugins' access, so they can be extended creating custom
+  plugins (#1928)
+- Added plugin inheritance example (#1921)
+- Added compatibility for Gatsby and other static site generators (#1938)
+- Minimap plugin: added the ability to use a customized regions plugin using a new parameter
+  `regionsPluginName` (#1943)
+- Fixed waveform display to not always connect to the sample=0 point (#1942)
+- Elan plugin: optional params.tiers (#1910)
+- Regions plugin:
+  - Split `regions.js` into `region.js` (containing `Region` class) and `index.js`.
+    Both files moved into the `src/plugin/regions` directory. This makes it easier
+    to extend these classes and use them in custom plugins (#1934)
+  - Fixed channelCount assignment (#1858)
+  - Fixed click propagation issue (#1926)
+  - Fixed switch loop region (#1929)
+  - Added ability to specify time format for Regions tooltip using timeformatCallback (#1948)
+- Add `splitChannelsOptions` param and `setFilteredChannels` method to configure how channels are drawn (#1947)
+
+3.3.3 (16.04.2020)
+------------------
+
+- Change default `desynchronized` drawing context attribute to `false` (#1908)
+
+3.3.2 (07.04.2020)
+------------------
+
+- Use `requestAnimationFrame` for clearWave (#1884)
+- Fix `Unable to get property 'toLowerCase' of undefined or null reference`
+  in IE11 (#1771)
+- Spectrogram plugin: correct the hamming windfunc formula (#1850)
+
+3.3.1 (13.01.2020)
+------------------
+
+- Regions plugin:
+  - Improve handles style support (#1839)
+  - Add support for a context menu event on a region (#1844)
+  - Fix for handle position when using `channelIdx` param (#1845)
+
+3.3.0 (29.12.2019)
+------------------
+
+- `wavesurfer.exportPCM` now accepts an optional `end` argument and returns
+  a Promise (#1728)
+- Add `wavesurfer.setPlayEnd(position)` to set a point in seconds for
+  playback to stop at (#1795)
+- Add `drawingContextAttributes` option and enable canvas `desynchronized`
+  hint (#1642)
+- Add `barMinHeight` option (#1693)
+- Expose progress to the `dblclick` event (#1790)
+- Deprecate `util.extend` and replace usage with `Object.assign` (#1825)
+- Regions plugin:
+  - Add `start` argument to `play` and `playLoop` methods (#1794)
+  - Add `maxRegions` option to limit max numbers of created regions (#1793)
+  - Don't assign to module object (#1823)
+  - Allow setting the `handleColor` inside `addRegion` (#1798)
+  - Disable drag selection before enabling it (#1698)
+  - Add `channelIdx` option to select specific channel to draw on (#1829)
+  - Refactor for improved readability (#1826)
+- Cursor plugin: fix time visibility (#1802)
+
+3.2.0 (24.10.2019)
+------------------
+
+- New `MediaElementWebAudio` backend (#1767):
+  - Allows you to use Web Audio API with big audio files, loading audio
+    like with MediaElement backend (HTML5 audio tag), so you can use the
+    same methods of MediaElement backend for loading and playback. This way,
+    the audio resource is not loaded entirely from server, but in ranges,
+    allowing you to use WebAudio features, like filters, on audio files with
+    a long duration. You can also supply peaks data, so the entire audio file
+    does not have to be decoded.
+    For example:
+    ```
+    wavesurfer.load(url | HTMLMediaElement, peaks, preload, duration);
+    wavesurfer.play();
+    wavesurfer.setFilter(customFilter);
+    ```
+- Add `barRadius` option to create waveforms with rounded bars (#953)
+- Throw error when the url parameter supplied to `wavesurfer.load()`
+  is empty (#1773, #1775)
+- Specify non-minified wavesurfer.js in `main` entry of `package.json` (#1759)
+- Add `dblclick` event listener to wavesurfer wrapper (#1764)
+- Fix `destroy()` in `MediaElement` backend (#1778)
+- Cursor plugin: flip position of time text to left of the cursor where needed
+  to improve readability (#1776)
+- Regions plugin: change region end handler position (#1762, #1781)
+
 3.1.0 (26.09.2019)
 ------------------
 
@@ -105,7 +201,7 @@ Check `UPGRADE.md` for backward incompatible changes since v2.x.
 - Fix `setSinkId` that used deprecated API (#1428)
 - Set `isReady` attribute to false when emptying wavesufer (#1396, #1403)
 - Microphone plugin: make it work in MS Edge browser (#627)
-- Timeline plugin: display more tick marks as user zooms in closely (#1455)
+- Timeline plugin: display more tick marks as the user zooms in closely (#1455)
 - Cursor plugin: fix `destroy` (#1435)
 
 2.0.6 (14.06.2018)
@@ -155,13 +251,13 @@ Check `UPGRADE.md` for backward incompatible changes since v2.x.
 - New plugin API
 - `MultiCanvas` renderer is now the default
 - Added getters and setters for height and color options (#1145)
-- Introduce option to prevent removing media element on destroy (#1163)
+- Introduce an option to prevent removing media element on destroy (#1163)
 - Added duration parameter for the load function (#1239)
 - New soundtouch.js filter to preserve pitch when changing tempo (#149)
-- Add `getPlaybackRate` method (#1022) 
+- Add `getPlaybackRate` method (#1022)
 - Switched to BSD license (#1060)
 - Added `setCurrentTime` method
-- Added `util.debounce` (#993) 
+- Added `util.debounce` (#993)
 
 1.2.4 (11.11.2016)
 ------------------
@@ -177,7 +273,7 @@ Check `UPGRADE.md` for backward incompatible changes since v2.x.
 1.2.2 (31.10.2016)
 ------------------
 
-- Determistic way to mute and unmute a track (#841)
+- Deterministic way to mute and unmute a track (#841)
 - Replace jasmine with karma / jasmine test suite (#849)
 - Regions plugin: fix a bug when clicking on scroll-bar in Firefox (#851)
 

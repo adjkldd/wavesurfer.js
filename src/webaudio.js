@@ -11,9 +11,9 @@ const FINISHED = 'finished';
  * @extends {Observer}
  */
 export default class WebAudio extends util.Observer {
-    /** @private */
+    /** scriptBufferSize: size of the processing buffer */
     static scriptBufferSize = 256;
-    /** @private */
+    /** audioContext: allows to process audio with WebAudio API */
     audioContext = null;
     /** @private */
     offlineAudioContext = null;
@@ -103,7 +103,7 @@ export default class WebAudio extends util.Observer {
         super();
         /** @private */
         this.params = params;
-        /** @private */
+        /** ac: Audio Context instance */
         this.ac =
             params.audioContext ||
             (this.supportsWebAudio() ? this.getAudioContext() : {});
@@ -111,7 +111,7 @@ export default class WebAudio extends util.Observer {
         this.lastPlay = this.ac.currentTime;
         /** @private */
         this.startPosition = 0;
-        /** @private  */
+        /** @private */
         this.scheduledPause = null;
         /** @private */
         this.states = {
@@ -120,12 +120,10 @@ export default class WebAudio extends util.Observer {
             [FINISHED]: Object.create(this.stateBehaviors[FINISHED])
         };
         /** @private */
-        this.analyser = null;
-        /** @private */
         this.buffer = null;
         /** @private */
         this.filters = [];
-        /** @private */
+        /** gainNode: allows to control audio volume */
         this.gainNode = null;
         /** @private */
         this.mergedPeaks = null;
@@ -135,9 +133,9 @@ export default class WebAudio extends util.Observer {
         this.peaks = null;
         /** @private */
         this.playbackRate = 1;
-        /** @private */
+        /** analyser: provides audio analysis information */
         this.analyser = null;
-        /** @private */
+        /** scriptNode: allows processing audio */
         this.scriptNode = null;
         /** @private */
         this.source = null;
@@ -147,6 +145,10 @@ export default class WebAudio extends util.Observer {
         this.state = null;
         /** @private */
         this.explicitDuration = params.duration;
+        /**
+         * Boolean indicating if the backend was destroyed.
+         */
+        this.destroyed = false;
     }
 
     /**
@@ -223,8 +225,7 @@ export default class WebAudio extends util.Observer {
                 .connect(this.gainNode);
         }
     }
-
-    /** @private */
+    /** Create ScriptProcessorNode to process audio */
     createScriptNode() {
         if (this.params.audioScriptProcessor) {
             this.scriptNode = this.params.audioScriptProcessor;
@@ -262,8 +263,7 @@ export default class WebAudio extends util.Observer {
     removeOnAudioProcess() {
         this.scriptNode.onaudioprocess = () => {};
     }
-
-    /** @private */
+    /** Create analyser node to perform audio analysis */
     createAnalyserNode() {
         this.analyser = this.ac.createAnalyser();
         this.analyser.connect(this.gainNode);
@@ -272,7 +272,6 @@ export default class WebAudio extends util.Observer {
     /**
      * Create the gain node needed to control the playback volume.
      *
-     * @private
      */
     createVolumeNode() {
         // Create gain node using the AudioContext
@@ -448,8 +447,14 @@ export default class WebAudio extends util.Observer {
             for (i = first; i <= last; i++) {
                 const start = ~~(i * sampleSize);
                 const end = ~~(start + sampleSize);
-                let min = 0;
-                let max = 0;
+                /**
+                 * Initialize the max and min to the first sample of this
+                 * subrange, so that even if the samples are entirely
+                 * on one side of zero, we still return the true max and
+                 * min values in the subrange.
+                 */
+                let min = chan[start];
+                let max = min;
                 let j;
 
                 for (j = start; j < end; j += sampleStep) {
@@ -495,16 +500,10 @@ export default class WebAudio extends util.Observer {
             this.source.disconnect();
         }
     }
-
     /**
-     * This is called when wavesurfer is destroyed
+     * Destroy all references with WebAudio, disconnecting audio nodes and closing Audio Context
      */
-    destroy() {
-        if (!this.isPaused()) {
-            this.pause();
-        }
-        this.unAll();
-        this.buffer = null;
+    destroyWebAudio() {
         this.disconnectFilters();
         this.disconnectSource();
         this.gainNode.disconnect();
@@ -532,6 +531,19 @@ export default class WebAudio extends util.Observer {
             // clear the offlineAudioContext
             window.WaveSurferOfflineAudioContext = null;
         }
+    }
+    /**
+     * This is called when wavesurfer is destroyed
+     */
+    destroy() {
+        if (!this.isPaused()) {
+            this.pause();
+        }
+        this.unAll();
+        this.buffer = null;
+        this.destroyed = true;
+
+        this.destroyWebAudio();
     }
 
     /**
@@ -656,7 +668,7 @@ export default class WebAudio extends util.Observer {
 
         this.scheduledPause = end;
 
-        this.source.start(0, start, end - start);
+        this.source.start(0, start);
 
         if (this.ac.state == 'suspended') {
             this.ac.resume && this.ac.resume();
@@ -714,5 +726,15 @@ export default class WebAudio extends util.Observer {
             this.playbackRate = value;
             this.play();
         }
+    }
+
+    /**
+     * Set a point in seconds for playback to stop at.
+     *
+     * @param {number} end Position to end at
+     * @version 3.3.0
+     */
+    setPlayEnd(end) {
+        this.scheduledPause = end;
     }
 }

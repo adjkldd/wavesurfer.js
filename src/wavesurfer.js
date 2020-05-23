@@ -4,6 +4,7 @@ import WebAudio from './webaudio';
 import MediaElement from './mediaelement';
 import PeakCache from './peakcache';
 import RealtimeDrawer from './drawer.realtime';
+import MediaElementWebAudio from './mediaelement-webaudio';
 
 /*
  * This work is licensed under a BSD-3-Clause License.
@@ -31,15 +32,25 @@ import RealtimeDrawer from './drawer.realtime';
  * waveform is centered
  * @property {boolean} autoCenterImmediately=false If autoCenter is active, immediately
  * center waveform on current progress
- * @property {string} backend='WebAudio' `'WebAudio'|'MediaElement'` In most cases
- * you don't have to set this manually. MediaElement is a fallback for
- * unsupported browsers.
+ * @property {string} backend='WebAudio' `'WebAudio'|'MediaElement'|'MediaElementWebAudio'` In most cases
+ * you don't have to set this manually. MediaElement is a fallback for unsupported browsers.
+ * MediaElementWebAudio allows to use WebAudio API also with big audio files, loading audio like with
+ * MediaElement backend (HTML5 audio tag). You have to use the same methods of MediaElement backend for loading and
+ * playback, giving also peaks, so the audio data are not decoded. In this way you can use WebAudio features, like filters,
+ * also with audio with big duration. For example:
+ * ` wavesurfer.load(url | HTMLMediaElement, peaks, preload, duration);
+ *   wavesurfer.play();
+ *   wavesurfer.setFilter(customFilter);
+ * `
  * @property {string} backgroundColor=null Change background color of the
  * waveform container.
  * @property {number} barHeight=1 The height of the wave bars.
+ * @property {number} barRadius=0 The radius of the wave bars. Makes bars rounded
  * @property {number} barGap=null The optional spacing between bars of the wave,
  * if not provided will be calculated in legacy format.
  * @property {number} barWidth=null Draw the waveform using bars.
+ * @property {number} barMinHeight=null If specified, draw at least a bar of this height,
+ * eliminating waveform gaps
  * @property {boolean} closeAudioContext=false Close and nullify all audio
  * contexts when the destroy method is called.
  * @property {!string|HTMLElement} container CSS selector or HTML element where
@@ -47,6 +58,8 @@ import RealtimeDrawer from './drawer.realtime';
  * @property {string} cursorColor='#333' The fill color of the cursor indicating
  * the playhead position.
  * @property {number} cursorWidth=1 Measured in pixels.
+ * @property {object} drawingContextAttributes={desynchronized: false} Drawing context
+ * attributes.
  * @property {number} duration=null Optional audio length so pre-rendered peaks
  * can be display immediately for example.
  * @property {boolean} fillParent=true Whether to fill the entire container or
@@ -67,10 +80,10 @@ import RealtimeDrawer from './drawer.realtime';
  * even integer). If the waveform is longer than this value, additional canvases
  * will be used to render the waveform, which is useful for very large waveforms
  * that may be too wide for browsers to draw on a single canvas.
- * @property {boolean} mediaControls=false (Use with backend `MediaElement`)
+ * @property {boolean} mediaControls=false (Use with backend `MediaElement` or `MediaElementWebAudio`)
  * this enables the native controls for the media element
- * @property {string} mediaType='audio' (Use with backend `MediaElement`)
- * `'audio'|'video'`
+ * @property {string} mediaType='audio' (Use with backend `MediaElement` or `MediaElementWebAudio`)
+ * `'audio'|'video'` ('video' only for `MediaElement`)
  * @property {number} minPxPerSec=20 Minimum number of pixels per second of
  * audio.
  * @property {boolean} normalize=false If true, normalize by the maximum peak
@@ -157,28 +170,28 @@ class PluginClass {
      *
      * @param {Object} params={} The plugin params (specific to the plugin)
      */
-    create(params) {}
+    create(params) { }
     /**
      * Construct the plugin
      *
      * @param {Object} params={} The plugin params (specific to the plugin)
      * @param {Object} ws The wavesurfer instance
      */
-    constructor(params, ws) {}
+    constructor(params, ws) { }
     /**
      * Initialise the plugin
      *
      * Start doing something. This is called by
      * `wavesurfer.initPlugin(pluginName)`
      */
-    init() {}
+    init() { }
     /**
      * Destroy the plugin instance
      *
      * Stop doing something. This is called by
      * `wavesurfer.destroyPlugin(pluginName)`
      */
-    destroy() {}
+    destroy() { }
 }
 
 /**
@@ -215,11 +228,19 @@ export default class WaveSurfer extends util.Observer {
         backend: 'WebAudio',
         backgroundColor: null,
         barHeight: 1,
+        barRadius: 0,
         barGap: null,
+        barMinHeight: null,
         container: null,
         cursorColor: '#333',
         cursorWidth: 1,
         dragSelection: true,
+        drawingContextAttributes: {
+            // Boolean that hints the user agent to reduce the latency
+            // by desynchronizing the canvas paint cycle from the event
+            // loop
+            desynchronized: false
+        },
         duration: null,
         fillParent: true,
         forceDecode: false,
@@ -245,6 +266,11 @@ export default class WaveSurfer extends util.Observer {
         scrollParent: false,
         skipLength: 2,
         splitChannels: false,
+        splitChannelsOptions: {
+            overlay: false,
+            channelColors: {},
+            filterChannels: [],
+        },
         waveColor: '#999',
         xhr: {}
     };
@@ -252,7 +278,8 @@ export default class WaveSurfer extends util.Observer {
     /** @private */
     backends = {
         MediaElement,
-        WebAudio
+        WebAudio,
+        MediaElementWebAudio
     };
 
     /**
@@ -312,7 +339,7 @@ export default class WaveSurfer extends util.Observer {
          * Extract relevant parameters (or defaults)
          * @private
          */
-        this.params = util.extend({}, this.defaultParams, params);
+        this.params = Object.assign({}, this.defaultParams, params);
 
         /** @private */
         this.container =
@@ -411,7 +438,8 @@ export default class WaveSurfer extends util.Observer {
         }
 
         if (
-            this.params.backend == 'WebAudio' &&
+            (this.params.backend == 'WebAudio' ||
+                this.params.backend === 'MediaElementWebAudio') &&
             !WebAudio.prototype.supportsWebAudio.call(null)
         ) {
             this.params.backend = 'MediaElement';
@@ -687,8 +715,11 @@ export default class WaveSurfer extends util.Observer {
             this.fireEvent('audioprocess', time);
         });
 
-        // only needed for MediaElement backend
-        if (this.params.backend === 'MediaElement') {
+        // only needed for MediaElement and MediaElementWebAudio backend
+        if (
+            this.params.backend === 'MediaElement' ||
+            this.params.backend === 'MediaElementWebAudio'
+        ) {
             this.backend.on('seek', () => {
                 this.drawer.progress(this.backend.getPlayedPercents());
             });
@@ -767,6 +798,16 @@ export default class WaveSurfer extends util.Observer {
     play(start, end) {
         this.fireEvent('interaction', () => this.play(start, end));
         return this.backend.play(start, end);
+    }
+
+    /**
+     * Set a point in seconds for playback to stop at.
+     *
+     * @param {number} position Position (in seconds) to stop at
+     * @version 3.3.0
+     */
+    setPlayEnd(position) {
+        this.backend.setPlayEnd(position);
     }
 
     /**
@@ -1150,6 +1191,24 @@ export default class WaveSurfer extends util.Observer {
     }
 
     /**
+     * Hide channels from being drawn on the waveform if splitting channels.
+     * 
+     * For example, if we want to draw only the peaks for the right stereo channel:
+     *
+     * const wavesurfer = new WaveSurfer.create({...splitChannels: true});
+     * wavesurfer.load('stereo_audio.mp3');
+     * 
+     * wavesurfer.setFilteredChannel([0]); <-- hide left channel peaks.
+     *
+     * @param {array} channelIndices Channels to be filtered out from drawing.
+     * @version 4.0.0
+     */
+    setFilteredChannels(channelIndices) {
+        this.params.splitChannelsOptions.filterChannels = channelIndices;
+        this.drawBuffer();
+    }
+
+    /**
      * Get the correct peaks for current wave view-port and render wave
      *
      * @private
@@ -1158,8 +1217,8 @@ export default class WaveSurfer extends util.Observer {
     drawBuffer() {
         const nominalWidth = Math.round(
             this.getDuration() *
-                this.params.minPxPerSec *
-                this.params.pixelRatio
+            this.params.minPxPerSec *
+            this.params.pixelRatio
         );
         const parentWidth = this.drawer.getWidth();
         let width = nominalWidth;
@@ -1291,13 +1350,14 @@ export default class WaveSurfer extends util.Observer {
      * audio element with the audio
      * @param {number[]|Number.<Array[]>} peaks Wavesurfer does not have to decode
      * the audio to render the waveform if this is specified
-     * @param {?string} preload (Use with backend `MediaElement`)
+     * @param {?string} preload (Use with backend `MediaElement` and `MediaElementWebAudio`)
      * `'none'|'metadata'|'auto'` Preload attribute for the media element
      * @param {?number} duration The duration of the audio. This is used to
      * render the peaks data in the correct size for the audio duration (as
      * befits the current `minPxPerSec` and zoom value) without having to decode
      * the audio.
      * @returns {void}
+     * @throws Will throw an error if the `url` argument is empty.
      * @example
      * // uses fetch or media element to load file (depending on backend)
      * wavesurfer.load('http://example.com/demo.wav');
@@ -1311,8 +1371,10 @@ export default class WaveSurfer extends util.Observer {
      * );
      */
     load(url, peaks, preload, duration) {
+        if (!url) {
+            throw new Error('url parameter cannot be empty');
+        }
         this.empty();
-
         if (preload) {
             // check whether the preload attribute will be usable and if not log
             // a warning listing the reasons why not and nullify the variable
@@ -1320,8 +1382,10 @@ export default class WaveSurfer extends util.Observer {
                 "Preload is not 'auto', 'none' or 'metadata'":
                     ['auto', 'metadata', 'none'].indexOf(preload) === -1,
                 'Peaks are not provided': !peaks,
-                'Backend is not of type MediaElement':
-                    this.params.backend !== 'MediaElement',
+                "Backend is not of type 'MediaElement' or 'MediaElementWebAudio'":
+                    ['MediaElement', 'MediaElementWebAudio'].indexOf(
+                        this.params.backend
+                    ) === -1,
                 'Url is not of type string': typeof url !== 'string'
             };
             const activeReasons = Object.keys(preloadIgnoreReasons).filter(
@@ -1331,7 +1395,7 @@ export default class WaveSurfer extends util.Observer {
                 // eslint-disable-next-line no-console
                 console.warn(
                     'Preload parameter of wavesurfer.load will be ignored because:\n\t- ' +
-                        activeReasons.join('\n\t- ')
+                    activeReasons.join('\n\t- ')
                 );
                 // stop invalid values from being used
                 preload = null;
@@ -1342,6 +1406,7 @@ export default class WaveSurfer extends util.Observer {
             case 'WebAudio':
                 return this.loadBuffer(url, peaks, duration);
             case 'MediaElement':
+            case 'MediaElementWebAudio':
                 return this.loadMediaElement(url, peaks, preload, duration);
         }
     }
@@ -1430,9 +1495,12 @@ export default class WaveSurfer extends util.Observer {
 
         this.tmpEvents.push(
             this.backend.once('canplay', () => {
-                this.drawBuffer();
-                this.isReady = true;
-                this.fireEvent('ready');
+                // ignore when backend was already destroyed
+                if (!this.backend.destroyed) {
+                    this.drawBuffer();
+                    this.isReady = true;
+                    this.fireEvent('ready');
+                }
             }),
             this.backend.once('error', err => this.fireEvent('error', err))
         );
@@ -1491,7 +1559,7 @@ export default class WaveSurfer extends util.Observer {
      * @private
      */
     getArrayBuffer(url, callback) {
-        let options = util.extend(
+        let options = Object.assign(
             {
                 url: url,
                 responseType: 'arraybuffer'
@@ -1541,32 +1609,35 @@ export default class WaveSurfer extends util.Observer {
     /**
      * Exports PCM data into a JSON array and opens in a new window.
      *
-     * @param {number} length=1024 The scale in which to export the peaks. (Integer)
-     * @param {number} accuracy=10000 (Integer)
+     * @param {number} length=1024 The scale in which to export the peaks
+     * @param {number} accuracy=10000
      * @param {?boolean} noWindow Set to true to disable opening a new
      * window with the JSON
      * @param {number} start Start index
-     * @todo Update exportPCM to work with new getPeaks signature
-     * @return {string} JSON of peaks
+     * @param {number} end End index
+     * @return {Promise} Promise that resolves with array of peaks
      */
-    exportPCM(length, accuracy, noWindow, start) {
+    exportPCM(length, accuracy, noWindow, start, end) {
         length = length || 1024;
         start = start || 0;
         accuracy = accuracy || 10000;
         noWindow = noWindow || false;
-        const peaks = this.backend.getPeaks(length, start);
+        const peaks = this.backend.getPeaks(length, start, end);
         const arr = [].map.call(
             peaks,
             val => Math.round(val * accuracy) / accuracy
         );
-        const json = JSON.stringify(arr);
-        if (!noWindow) {
-            window.open(
-                'data:application/json;charset=utf-8,' +
+        return new Promise((resolve, reject) => {
+            const json = JSON.stringify(arr);
+
+            if (!noWindow) {
+                window.open(
+                    'data:application/json;charset=utf-8,' +
                     encodeURIComponent(json)
-            );
-        }
-        return json;
+                );
+            }
+            resolve(json);
+        });
     }
 
     /**
@@ -1629,6 +1700,8 @@ export default class WaveSurfer extends util.Observer {
         this.isReady = false;
         this.cancelAjax();
         this.clearTmpEvents();
+
+        // empty drawer
         this.drawer.progress(0);
         this.drawer.setWidth(0);
         this.drawer.drawPeaks({ length: this.drawer.getWidth() }, 0);
@@ -1653,8 +1726,12 @@ export default class WaveSurfer extends util.Observer {
                 true
             );
         }
-        this.backend.destroy();
-        this.drawer.destroy();
+        if (this.backend) {
+            this.backend.destroy();
+        }
+        if (this.drawer) {
+            this.drawer.destroy();
+        }
         this.isDestroyed = true;
         this.isReady = false;
         this.arraybuffer = null;
